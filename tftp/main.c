@@ -49,7 +49,7 @@
 
 #include "extern.h"
 
-#define	TIMEOUT		5       /* secs between rexmt's */
+#define	RTIMEOUT	5       /* secs between rexmt's */
 #define	LBUFLEN		200     /* size of input buffer */
 
 struct modes {
@@ -82,7 +82,7 @@ int ai_fam_sock = AF_INET;
 union sock_addr peeraddr;
 int f = -1;
 u_short port;
-int trace;
+int trace_opt;
 int verbose;
 int literal;
 int connected;
@@ -104,6 +104,7 @@ struct servent *sp;
 int portrange = 0;
 unsigned int portrange_from = 0;
 unsigned int portrange_to = 0;
+int windowsize = -1;
 
 void get(int, char **);
 void help(int, char **);
@@ -195,10 +196,10 @@ static void usage(int errcode)
 {
     fprintf(stderr,
 #ifdef HAVE_IPV6
-            "Usage: %s [-4][-6][-v][-V][-l][-m mode] [-R port:port] "
+            "Usage: %s [-4][-6][-v][-V][-l][-m mode][-w size] [-R port:port] "
 			"[host [port]] [-c command]\n",
 #else
-            "Usage: %s [-v][-V][-l][-m mode] [-R port:port] "
+            "Usage: %s [-v][-V][-l][-m mode][-w size] [-R port:port] "
 			"[host [port]] [-c command]\n",
 #endif
             program);
@@ -278,6 +279,15 @@ int main(int argc, char *argv[])
                         exit(EX_USAGE);
                     }
                     portrange = 1;
+                    break;
+                case 'w':
+                    if (++arg >= argc)
+                        usage(EX_USAGE);
+                    windowsize = atoi(argv[arg]);
+                    if (windowsize <= 0 || windowsize > 64) {
+                        fprintf(stderr, "Bad window size: %s (1-64)\n", argv[arg]);
+                        exit(EX_USAGE);
+                    }
                     break;
                 case 'h':
                 default:
@@ -593,7 +603,7 @@ void put(int argc, char *argv[])
             printf("putting %s to %s:%s [%s]\n",
                    cp, hostname, targ, mode->m_mode);
         sa_set_port(&peeraddr, port);
-        tftp_sendfile(fd, targ, mode->m_mode);
+        tftp_sendfile(fd, targ, mode->m_mode, windowsize);
         return;
     }
     /* this assumes the target is a directory */
@@ -625,7 +635,7 @@ void put(int argc, char *argv[])
             printf("putting %s to %s:%s [%s]\n",
                    argv[n], hostname, remote_pth, mode->m_mode);
         sa_set_port(&peeraddr, port);
-        tftp_sendfile(fd, remote_pth, mode->m_mode);
+        tftp_sendfile(fd, remote_pth, mode->m_mode, windowsize);
     }
 }
 
@@ -693,7 +703,7 @@ void get(int argc, char *argv[])
                 printf("getting from %s:%s to %s [%s]\n",
                        hostname, src, cp, mode->m_mode);
             sa_set_port(&peeraddr, port);
-            tftp_recvfile(fd, src, mode->m_mode);
+            tftp_recvfile(fd, src, mode->m_mode, windowsize);
             break;
         }
         cp = tail(src);         /* new .. jdg */
@@ -708,7 +718,7 @@ void get(int argc, char *argv[])
             printf("getting from %s:%s to %s [%s]\n",
                    hostname, src, cp, mode->m_mode);
         sa_set_port(&peeraddr, port);
-        tftp_recvfile(fd, src, mode->m_mode);
+        tftp_recvfile(fd, src, mode->m_mode, windowsize);
     }
 }
 
@@ -718,7 +728,7 @@ static void getusage(char *s)
     printf("       %s file file ... file if connected\n", s);
 }
 
-int rexmtval = TIMEOUT;
+int rexmtval = RTIMEOUT;
 
 void setrexmt(int argc, char *argv[])
 {
@@ -741,7 +751,7 @@ void setrexmt(int argc, char *argv[])
         rexmtval = t;
 }
 
-int maxtimeout = 5 * TIMEOUT;
+int maxtimeout = 5 * RTIMEOUT;
 
 void settimeout(int argc, char *argv[])
 {
@@ -781,7 +791,7 @@ void status(int argc, char *argv[])
     else
         printf("Not connected.\n");
     printf("Mode: %s Verbose: %s Tracing: %s Literal: %s\n", mode->m_mode,
-           verbose ? "on" : "off", trace ? "on" : "off",
+           verbose ? "on" : "off", trace_opt ? "on" : "off",
            literal ? "on" : "off");
     printf("Rexmt-interval: %d seconds, Max-timeout: %d seconds\n",
            rexmtval, maxtimeout);
@@ -969,8 +979,8 @@ void settrace(int argc, char *argv[])
     (void)argc;
     (void)argv;                 /* Quiet unused warning */
 
-    trace = !trace;
-    printf("Packet tracing %s.\n", trace ? "on" : "off");
+    trace_opt = !trace_opt;
+    printf("Packet tracing %s.\n", trace_opt ? "on" : "off");
 }
 
 void setverbose(int argc, char *argv[])
